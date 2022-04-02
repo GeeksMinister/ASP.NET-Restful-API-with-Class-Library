@@ -16,7 +16,7 @@ builder.Services.AddAutoMapper(typeof(MapperInitializer));
 builder.Services.AddDbContextPool<CompanyDbContext>(options => options.UseSqlServer(
     builder.Configuration.GetConnectionString("DefaultConnection")));
 
-builder.Services.AddScoped<ICompanyRepository<Employee, Project, TimeReport>, CompanyRepository>();
+builder.Services.AddScoped<ICompanyRepository<Employee, Project, TimeReport, Employee_Project>, CompanyRepository>();
 
 var app = builder.Build();
 

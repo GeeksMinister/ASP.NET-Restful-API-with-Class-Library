@@ -1,8 +1,11 @@
-﻿public class CompanyRepository : ICompanyRepository<Employee, Project, TimeReport>
+﻿public class CompanyRepository : ICompanyRepository<Employee, Project, TimeReport, Employee_Project>
 {
+#pragma warning disable CS8600
 #pragma warning disable CS8603
+#pragma warning disable CS8620
     private readonly CompanyDbContext _companyDbContext;
     private readonly IMapper _mapper;
+
     public CompanyRepository(CompanyDbContext companyDbContext, IMapper mapper)
     {
         _companyDbContext = companyDbContext;
@@ -14,7 +17,15 @@
         return await _companyDbContext.Employees.ToListAsync();
     }
 
-    public async Task<Employee> GetAllInfo(int id)
+    public async Task<IEnumerable<TimeReport>> GetSomeObjects(ObjectParameters objectParameters)
+    {
+        return await _companyDbContext.TimeReports
+            .Skip((objectParameters.PageNumber - 1) * objectParameters.PageSize)
+            .Take(objectParameters.PageSize)
+            .ToListAsync();
+    }
+
+    public async Task<Employee> GetTimeReports(int id)
     {
         return await _companyDbContext.Employees
             .Include(e => e.Time_Reports).FirstOrDefaultAsync(e => e.Id == id);
@@ -22,14 +33,9 @@
 
     public async Task<Project> GetProjectInfoById(int id)
     {
-        await (from emp in _companyDbContext.Employees
-               join emp_proj in _companyDbContext.Employees_Projects
-               on emp.Id equals emp_proj.EmployeeId
-               select emp).ToListAsync();
-
         return await (from project in _companyDbContext.Projects
                       where project.Id == id
-                      select project).Include(e => e.Employee_Project)
+                      select project).Include(e => e.Employee_Project).ThenInclude(e => e.Employee)
                      .FirstOrDefaultAsync();
     }
 
@@ -64,6 +70,25 @@
         await _companyDbContext.SaveChangesAsync();
         return newTimeReport.Entity;
     }
+    public async Task<bool> CheckDuplication(Employee_ProjectDto employee_ProjectDto)
+    {
+        var result = await _companyDbContext.Employees_Projects.FirstOrDefaultAsync(
+            emp_proj => emp_proj.EmployeeId == employee_ProjectDto.EmployeeId &&
+            emp_proj.ProjectId == employee_ProjectDto.ProjectId);
+        if (result != null)
+        {
+            return true;
+        }
+        else return false;
+    }
+
+    public async Task<Employee_Project> AssignEmployeeToProject(Employee_ProjectDto employee_ProjectDto)
+    {
+        Employee_Project employee_Project = _mapper.Map<Employee_Project>(employee_ProjectDto);
+        var newEmployee_Project = await _companyDbContext.Employees_Projects.AddAsync(employee_Project);
+        await _companyDbContext.SaveChangesAsync();
+        return newEmployee_Project.Entity;
+    }
 
     public async Task<Employee> DeleteEmployee(int id)
     {
@@ -97,6 +122,18 @@
             await _companyDbContext.SaveChangesAsync();
         }
         return timeReport;
+    }
+
+    public async Task<Employee_Project> DismissEmployeeFromProject(int employeeId, int projectID)
+    {
+        Employee_Project employee_Project = await _companyDbContext.Employees_Projects
+            .FirstOrDefaultAsync(emp_proj => emp_proj.EmployeeId == employeeId && emp_proj.ProjectId == projectID);
+        if (employee_Project != null)
+        {
+            _companyDbContext.Employees_Projects.Remove(employee_Project);
+            await _companyDbContext.SaveChangesAsync();
+        }
+        return employee_Project;
     }
 
     public async Task<Employee> UpdateEmployee(int id, EmployeeDto employeeDto)
@@ -141,6 +178,5 @@
         }
         return timeReport;
     }
-
 
 }

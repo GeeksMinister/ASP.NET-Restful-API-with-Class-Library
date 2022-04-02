@@ -5,8 +5,8 @@ using System.ComponentModel.DataAnnotations;
 [ApiController]
 public class CompanyController : ControllerBase
 {
-    private readonly ICompanyRepository<Employee, Project, TimeReport> _companyRepository;
-    public CompanyController(ICompanyRepository<Employee, Project, TimeReport> companyRepository)
+    private readonly ICompanyRepository<Employee, Project, TimeReport, Employee_Project> _companyRepository;
+    public CompanyController(ICompanyRepository<Employee, Project, TimeReport, Employee_Project> companyRepository)
     {
         _companyRepository = companyRepository;
     }
@@ -30,14 +30,39 @@ public class CompanyController : ControllerBase
         }
     }
 
-    [HttpGet("GetTimeTables")]
+    [HttpGet("GetTimeReport-Pagination")]
+    public async Task<IActionResult> GetSomeTimeReports([FromQuery] ObjectParameters objectParameters)
+    {
+        try
+        {
+            var timeReport = await _companyRepository.GetSomeObjects(objectParameters);
+            if (timeReport != null)
+            {
+                return Ok(timeReport);
+            }
+            return NotFound();
+        }
+        catch (Exception)
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError,
+                        "Failed to retrive data from server");
+        }
+    }
+
+    [HttpGet("GetTimeReports")]
     public async Task<IActionResult> GetEmployeeTimeReport(int id)
     {
         try
         {
-            var employee = await _companyRepository.GetAllInfo(id);
+            var employee = await _companyRepository.GetTimeReports(id);
             if (employee != null)
             {
+                var totalReports = employee.Time_Reports.Count();
+                if (totalReports == 0)
+                {
+                    return NotFound($"Employee with Id [{id}] has no registered TimeReports");
+                }
+                Response.Headers.Add("Total_TimeReports", JsonConvert.SerializeObject(totalReports));
                 return Ok(employee);
             }
             return NotFound($"Employee with Id [{id}] was not found");
@@ -57,9 +82,15 @@ public class CompanyController : ControllerBase
             var project = await _companyRepository.GetProjectInfoById(id);
             if (project != null)
             {
+                var totalEmployees = project.Employee_Project?.Count();
+                if (totalEmployees == 0)
+                {
+                    return NotFound($"Project with Id [{id}] has no assigned employee");
+                }
+                Response.Headers.Add("Total_Employees", JsonConvert.SerializeObject(totalEmployees));
                 return Ok(project);
             }
-            return NotFound($"Project with Id [{id}] was not found");
+            return NotFound($"Project with Id [{id}] was NOT found");
         }
         catch (Exception)
         {
@@ -68,16 +99,16 @@ public class CompanyController : ControllerBase
         }
     }
 
-    [HttpGet("GetWeekTimeTable")]
-    public async Task<IActionResult> GetWeekTimeTable([FromQuery] int employeeId, int weekNum)
+    [HttpGet("GetHoursInWeekTimeTable")]
+    public async Task<IActionResult> GetHoursInWeekTimeTable([FromQuery] int employeeId, int weekNum)
     {
         try
         {
             var employee = await _companyRepository.GetRegisteredHoursInWeek(employeeId, weekNum);
-            if (employee != null && employee.Time_Reports.Any())
+            if (employee?.Time_Reports?.Any() ?? false)
             {
                 var hours = employee.Time_Reports.Select(report => report.WorkingHours);
-                Response.Headers.Add("totalHours", JsonConvert.SerializeObject(hours));
+                Response.Headers.Add("Total_Hours", JsonConvert.SerializeObject(hours));
                 return Ok(employee);
             }
             return NotFound($"The entered (EmployeeId [{employeeId}] , week number" +
@@ -98,7 +129,7 @@ public class CompanyController : ControllerBase
             var employee = await _companyRepository.AddEmployee(employeeDto);
             if (employee != null)
             {
-                return Ok(employee);
+                return CreatedAtAction(nameof(GetEmployeeTimeReport), new { Id = employee.Id }, employee);
             }
             return BadRequest();
         }
@@ -144,7 +175,32 @@ public class CompanyController : ControllerBase
         {
             return StatusCode(StatusCodes.Status500InternalServerError,
             "Failed to add a new TimeReport or the entered (EmployeeId" +
-                $" [{timeReportDto.EmployeeId}] , ProjectId [{timeReportDto.ProjectId}]) weren't found");
+                $"[{timeReportDto.EmployeeId}], ProjectId[{timeReportDto.ProjectId}]) weren't found");
+        }
+    }
+
+    [HttpPost("AssignEmployeeToProject")]
+    public async Task<IActionResult> AssignEmployee(Employee_ProjectDto employee_ProjectDto)
+    {
+        try
+        {
+            if (await _companyRepository.CheckDuplication(employee_ProjectDto))
+            {
+                return BadRequest("The employee is already assigned to the project");
+            }
+            if (employee_ProjectDto != null)
+            {
+                await _companyRepository.AssignEmployeeToProject(employee_ProjectDto);
+                return Ok("The employee was successfully assigned");
+            }
+            return NotFound($"The entered(EmployeeId  [{employee_ProjectDto?.EmployeeId}]" +
+                $" , ProjectId [{employee_ProjectDto?.ProjectId}]) weren't found");
+        }
+        catch (Exception)
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError,
+            $"Failed to assign employee to project or the entered (EmployeeId[{employee_ProjectDto?.EmployeeId}]" +
+                $", ProjectId[{employee_ProjectDto?.ProjectId}]) weren't found");
         }
     }
 
@@ -156,7 +212,7 @@ public class CompanyController : ControllerBase
             var employee = await _companyRepository.DeleteEmployee(id);
             if (employee != null)
             {
-                return Ok(employee);
+                return Ok("Employee was successfully removed");
             }
             return NotFound($"Employee with Id [{id}] was not found");
         }
@@ -175,7 +231,7 @@ public class CompanyController : ControllerBase
             var project = await _companyRepository.DeleteProject(id);
             if (project != null)
             {
-                return Ok(project);
+                return Ok("Project was successfully removed");
             }
             return NotFound($"Project with Id [{id}] wasn't found");
         }
@@ -194,7 +250,7 @@ public class CompanyController : ControllerBase
             var timeReport = await _companyRepository.DeleteTimeReport(id);
             if (timeReport != null)
             {
-                return Ok(timeReport);
+                return Ok("TimeReport was successfully removed");
             }
             return NotFound($"TimeReport with Id [{id}] wasn't found");
         }
@@ -202,6 +258,26 @@ public class CompanyController : ControllerBase
         {
             return StatusCode(StatusCodes.Status500InternalServerError,
                 "Failed to remove TimeReport");
+        }
+    }
+
+    [HttpDelete("DismissEmployee")]
+    public async Task<IActionResult> DismissEmployee(int employeeId, int projectId)
+    {
+        try
+        {
+            var emp_proj = await _companyRepository.DismissEmployeeFromProject(employeeId, projectId);
+            if (emp_proj != null)
+            {
+                return Ok("Employee was successfully dismissed from project");
+            }
+            return NotFound($"The entered (EmployeeId[{employeeId}]," +
+                $" ProjectId[{projectId}]) weren't found or not actually assigned");
+        }
+        catch (Exception)
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError,
+      "Failed to dismiss employee from project");
         }
     }
 
@@ -252,8 +328,8 @@ public class CompanyController : ControllerBase
             {
                 return Ok(timeReport);
             }
-            return BadRequest($"The entered(Id [{id}], EmployeeId[{ timeReportDto.EmployeeId}]" +
-                             $", ProjectId [{timeReportDto.ProjectId}]) weren't found");
+            return BadRequest($"The entered(Id[{id}], EmployeeId[{ timeReportDto.EmployeeId}]" +
+                             $", ProjectId[{timeReportDto.ProjectId}]) weren't found");
         }
         catch (Exception)
         {
