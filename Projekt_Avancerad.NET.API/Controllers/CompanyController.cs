@@ -1,17 +1,106 @@
-﻿using Newtonsoft.Json;
+﻿using System.Security.Claims;
+using Newtonsoft.Json;
 using System.ComponentModel.DataAnnotations;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
+using System.IdentityModel.Tokens.Jwt;
+using Microsoft.AspNetCore.Authorization;
 
 [Route("api/[controller]")]
 [ApiController]
 public class CompanyController : ControllerBase
 {
     private readonly ICompanyRepository<Employee, Project, TimeReport, Employee_Project> _companyRepository;
-    public CompanyController(ICompanyRepository<Employee, Project, TimeReport, Employee_Project> companyRepository)
+    private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly IConfiguration _config;
+
+    public CompanyController(ICompanyRepository<Employee, Project, TimeReport, Employee_Project> companyRepository,
+        IHttpContextAccessor httpContextAccessor, IConfiguration config)
     {
         _companyRepository = companyRepository;
+        _httpContextAccessor = httpContextAccessor;
+        _config = config;
     }
 
-    [HttpGet("AllEmployees")]
+    [HttpPost("Login")]
+    public async Task<ActionResult<string>> Login(int id, string password)
+    {
+        var employee = await _companyRepository.GetEmployeeById(id);
+        if (employee == null) return BadRequest("User Was NOT Found.");
+        if (!_companyRepository.VerifyPassword(employee, password))
+        {
+            return BadRequest("Wrong password.");
+        }
+        string token = CreateToken(employee);
+        SetRefreshToken(employee, new RefreshToken());
+        return Ok(token);
+    }
+
+    [HttpPost("refresh-token"), Authorize(Roles = "Admin")]
+    public async Task<ActionResult<string>> RefreshToken()
+    {
+        var refreshToken = Request.Cookies["refreshToken"];
+        var employee = await GetEmployeeFromClaimIdentity();
+        if (employee == null) return BadRequest();
+        if (employee.RefreshToken!.Equals(refreshToken))
+        {
+            return Unauthorized("Invalid Refresh Token.");
+        }
+        else if (employee.TokenExpires < DateTime.Now)
+        {
+            return Unauthorized("Token expired.");
+        }
+        string token = CreateToken(employee);
+        SetRefreshToken(employee, new RefreshToken());
+        return Ok(token);
+    }
+
+    private void SetRefreshToken(Employee employee, RefreshToken refreshToken)
+    {
+        var cookieOptions = new CookieOptions
+        {
+            HttpOnly = true,
+            Expires = refreshToken.Expires
+        };
+        Response.Cookies.Append("refreshToken", refreshToken.Token, cookieOptions);
+        employee.RefreshToken = refreshToken.Token;
+        employee.TokenCreated = refreshToken.Created;
+        employee.TokenExpires = refreshToken.Expires;
+    }
+    
+    private async Task<Employee?> GetEmployeeFromClaimIdentity()
+    {
+        var id = _httpContextAccessor?.HttpContext?.User.FindFirstValue(ClaimTypes.SerialNumber);
+        if (id == null) return null;
+        return await _companyRepository.GetEmployeeById(int.Parse(id));
+    }
+
+    private string CreateToken(Employee employee)
+    {
+        var claims = new List<Claim>
+        {
+            new Claim(ClaimTypes.Role, employee.Role),
+            new Claim(ClaimTypes.Name, employee.FirstName),
+            new Claim(ClaimTypes.MobilePhone, employee.Phone),
+            new Claim(ClaimTypes.Email, employee.Email),
+            new Claim(ClaimTypes.StreetAddress, employee.City),
+            new Claim(ClaimTypes.SerialNumber, employee.Id.ToString())
+        };
+
+        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(
+            _config.GetValue<string>("AppSettings:Token")));
+        var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha512);
+
+        var token = new JwtSecurityToken(
+            claims: claims,
+            expires: DateTime.Now.AddDays(1),
+            signingCredentials: creds);
+
+        return new JwtSecurityTokenHandler().WriteToken(token);
+    }
+
+
+    [HttpGet("AllEmployees"), Authorize(Roles = "Admin")]
     public async Task<IActionResult> GetAllEmployees()
     {
         try
@@ -129,6 +218,7 @@ public class CompanyController : ControllerBase
             var employee = await _companyRepository.AddEmployee(employeeDto);
             if (employee != null)
             {
+                //GetEmployeeTimeReport will only retrun the newly add employee.
                 return CreatedAtAction(nameof(GetEmployeeTimeReport), new { Id = employee.Id }, employee);
             }
             return BadRequest();

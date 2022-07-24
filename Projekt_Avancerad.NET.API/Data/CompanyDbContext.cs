@@ -1,12 +1,19 @@
 ﻿public class CompanyDbContext : DbContext
 {
 #pragma warning disable CS8618
-    public CompanyDbContext(DbContextOptions<CompanyDbContext> options) : base(options) { }
+    public CompanyDbContext()
+    {
+
+    }
 
     public DbSet<Employee> Employees { get; set; }
     public DbSet<Project> Projects { get; set; }
     public DbSet<Employee_Project> Employees_Projects { get; set; }
     public DbSet<TimeReport> TimeReports { get; set; }
+
+
+    protected override void OnConfiguring(DbContextOptionsBuilder options)
+    => options.UseSqlite($"Data Source=Data\\Company.db");
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

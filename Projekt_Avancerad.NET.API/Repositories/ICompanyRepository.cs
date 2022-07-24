@@ -6,6 +6,8 @@
     // W : Employee_Project
     Task<IEnumerable<T>> GetAll();
     Task<IEnumerable<V>> GetSomeObjects(ObjectParameters objectParameters);
+    Task<Employee> GetEmployeeById(int id);
+    bool VerifyPassword(Employee employee, string password);
     Task<T> GetTimeReports(int id);
     Task<U> GetProjectInfoById(int id);
     Task<T> GetRegisteredHoursInWeek(int id, int weekNum);

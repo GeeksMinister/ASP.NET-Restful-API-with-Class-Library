@@ -1,4 +1,7 @@
-﻿public class CompanyRepository : ICompanyRepository<Employee, Project, TimeReport, Employee_Project>
+﻿using System.Security.Cryptography;
+using System.Text;
+
+public class CompanyRepository : ICompanyRepository<Employee, Project, TimeReport, Employee_Project>
 {
 #pragma warning disable CS8600
 #pragma warning disable CS8603
@@ -23,6 +26,12 @@
             .Skip((objectParameters.PageNumber - 1) * objectParameters.PageSize)
             .Take(objectParameters.PageSize)
             .ToListAsync();
+    }
+
+    public async Task<Employee> GetEmployeeById(int id)
+    {
+        var employee = await _companyDbContext.Employees.FirstOrDefaultAsync(emp => emp.Id == id);
+        return employee;
     }
 
     public async Task<Employee> GetTimeReports(int id)
@@ -50,6 +59,7 @@
     public async Task<Employee> AddEmployee(EmployeeDto employeeDto)
     {
         Employee employee = _mapper.Map<Employee>(employeeDto);
+        (employee.PasswordSalt, employee.PasswordHash) = CreatePasswordHash(employeeDto.Password);
         var newEmployee = await _companyDbContext.Employees.AddAsync(employee);
         await _companyDbContext.SaveChangesAsync();
         return newEmployee.Entity;
@@ -147,6 +157,7 @@
             employee.Phone = employeeDto.Phone;
             employee.Email = employeeDto.Email;
             employee.City = employeeDto.City;
+            (employee.PasswordSalt, employee.PasswordHash) = CreatePasswordHash(employeeDto.Password);
             await _companyDbContext.SaveChangesAsync();
         }
         return employee;
@@ -178,5 +189,19 @@
         }
         return timeReport;
     }
+
+    private (byte[] passwordSalt, byte[] passwordHash) CreatePasswordHash(string password)
+    {
+        using var hmac = new HMACSHA512();
+        return (hmac.Key, hmac.ComputeHash(Encoding.UTF8.GetBytes(password)));
+    }
+
+    public bool VerifyPassword(Employee employee, string password)
+    {
+        using var hmac = new HMACSHA512(employee.PasswordSalt!);
+        var computedHash = hmac.ComputeHash(Encoding.UTF8.GetBytes(password));
+        return computedHash.SequenceEqual(employee.PasswordHash!);
+    }
+
 
 }

@@ -14,11 +14,18 @@
     [StringLength(300)]
     public string Email { get; set; }
     [StringLength(20)]
-    public string? City { get; set; }
+    public string City { get; set; }
     [JsonIgnore(Condition = JsonIgnoreCondition.Always)]
     public IEnumerable<Employee_Project>? Employee_Projects { get; set; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public IEnumerable<TimeReport> Time_Reports { get; set; }
 
+    public string Role { get; set; } = "Employee";
+    public byte[]? PasswordHash { get; set; }
+    public byte[]? PasswordSalt { get; set; }
+    public string? RefreshToken { get; set; } = string.Empty;
+    public DateTime? TokenCreated { get; set; }
+    public DateTime? TokenExpires { get; set; }
+    
     public Employee() { }
 }

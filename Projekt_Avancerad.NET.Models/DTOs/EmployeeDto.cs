@@ -12,6 +12,11 @@
     [StringLength(300)]
     public string Email { get; set; }
     [StringLength(30)]
-    public string? City { get; set; }
-    public EmployeeDto() { }
+    public string City { get; set; }
+    public string Password { get; set; }
+
+    public EmployeeDto() 
+    {
+
+    }
 }
