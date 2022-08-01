@@ -23,7 +23,7 @@ public class CompanyController : ControllerBase
     }
 
     [HttpPost("Login")]
-    public async Task<ActionResult<string>> Login(int id, string password)
+    public async Task<ActionResult<string>> Login([FromForm]int id,[FromForm] string password)
     {
         var employee = await _companyRepository.GetEmployeeById(id);
         if (employee == null) return BadRequest("User Was NOT Found.");
@@ -164,7 +164,7 @@ public class CompanyController : ControllerBase
     }
 
     [HttpGet("GetProjectEmployees")]
-    public async Task<IActionResult> GetProjectEmployees(int id)
+    public async Task<IActionResult> GetProjectEmployees([FromForm] int id)
     {
         try
         {
@@ -198,6 +198,8 @@ public class CompanyController : ControllerBase
             {
                 var hours = employee.Time_Reports.Select(report => report.WorkingHours);
                 Response.Headers.Add("Total_Hours", JsonConvert.SerializeObject(hours));
+                //var hours = employee.Time_Reports.Select(report => report.WorkingHours).FirstOrDefault();
+                //Response.Headers.Add("Total_Hours", hours.ToString());
                 return Ok(employee);
             }
             return NotFound($"The entered (EmployeeId [{employeeId}] , week number" +
